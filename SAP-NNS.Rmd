@@ -1,0 +1,127 @@
+---
+title: "Untitled"
+author: "Sima"
+date: "2023-12-01"
+output: html_document
+---
+
+Objective 1:
+Are lower pre- or post-op attention scores associated with lower % oral feeds at discharge?
+```{r}
+
+library(mice)
+library(gamlss)
+```
+
+Changing 1s to less than 1:
+
+```{r}
+data=complete(nnns_imputed, 1)
+names(data)
+attach(data)
+response=Percent_of_feeds_taken_by_mouth_at_discharge
+
+
+# Check if there are any values equal to 1 in the response
+
+# Check if there are any non-zero values in the response
+non_zero_indices <- which(response != 0)
+
+if (length(non_zero_indices) > 0) {
+  # Apply the transformation to non-zero values
+  response[non_zero_indices] <- (response[non_zero_indices]*(length(non_zero_indices)-1) + 0.5) / length(non_zero_indices)
+}
+response
+
+```
+
+```{r}
+# Assuming your original design matrix is stored in a data frame called 'data'
+
+# Define a mapping of old variable names to new, shorter names
+variable_mapping <- c(
+  "Female" = "Female",
+  "Age_at_Surgery_days" = "Age",
+  "Cardiac_Anatomy_collapsed" = "Cardiac",
+  "Genetic_Syndrome_or_Chromosomal_Abnormality" = "Genetic",
+  "Pre_Op_NNNS_attention_score" = "Attention_score",
+  "Pre_Op_NNNS_handling_score" = "Handling_score",
+  "Pre_Op_NNNS_Quality_of_Movement_Score" = "Movement_score",
+  "Pre_Op_NNNS_Regulation_Score" = "Regulation_score",
+  "Pre_Op_NNNS_Non_Optimal_Reflexes_Score" = "Reflexes_score",
+  "Pre_Op_NNNS_Stress_Score" = "Stress_score",
+  "Pre_Op_NNNS_Arousal_Score" = "Arousal_score",
+  "Pre_Op_NNNS_Hypertonic_Score" = "Hypertonic_score",
+  "Pre_Op_NNNS_Hypotonic_Score" = "Hypotonic_score",
+  "Pre_Op_NNNS_Asymmetry_Score" = "Asymmetry_score",
+  "Pre_Op_NNNS_Excitability_Score" = "Excitability_score",
+  "Pre_Op_NNNS_Lethargy_Score" = "Lethargy_score",
+  "Cardiac_Anatomy_collapsed"="Cardiac"
+)
+
+# Rename the columns of the data frame using the mapping
+colnames(data) <- sapply(colnames(data), function(x) ifelse(x %in% names(variable_mapping), variable_mapping[x], x))
+attach(data)
+Cardiac=as.factor(Cardiac)
+
+names(data)
+
+```
+
+
+Pre:
+```{r}
+complete_model <- gamlss(response ~   Age+Cardiac+                                      Genetic+Attention_score+Handling_score+Movement_score+                            Regulation_score+Reflexes_score+Stress_score+ Arousal_score+ Hypertonic_score +Hypotonic_score+Asymmetry_score+Excitability_score+                     Lethargy_score,
+                            
+    sigma.formula =~1, nu.formula = ~Age+  Cardiac+                                    Genetic+Attention_score+Handling_score+Movement_score+                            Regulation_score+Reflexes_score+Stress_score+ Arousal_score+ Hypertonic_score +Hypotonic_score+Asymmetry_score+Excitability_score+                     Lethargy_score, family = BEZI, data
+  )
+summary(complete_model)
+```
+
+Post:
+```{r}
+# Define a mapping of old variable names to new shorter names
+variable_mapping <- c(
+  "Post_Op_NNNS_attention_score" = "Po_Attention_score",
+  "Post_Op_NNNS_handling_score" = "Po_Handling_score",
+  "Post_Op_NNNS_Quality_of_Movement_Score" = "Po_Movement_score",
+  "Post_Op_NNNS_Regulation_Score" = "Po_Regulation_score",
+  "Post_Op_NNNS_Non_Optimal_Reflexes_Score" = "Po_Reflexes_score",
+  "Post_Op_NNNS_Stress_Score" = "Po_Stress_score",
+  "Post_Op_NNNS_Arousal_Score" = "Po_Arousal_score",
+  "Post_Op_NNNS_Hypertonic_Score" = "Po_Hypertonic_score",
+  "Post_Op_NNNS_Hypotonic_Score" = "Po_Hypotonic_score",
+  "Post_Op_NNNS_Asymmetry_Score" = "Po_Asymmetry_score",
+  "Post_Op_NNNS_Excitability_Score" = "Po_Excitability_score",
+  "Post_Op_NNNS_Lethargy_Score" = "Po_Lethargy_score"
+)
+colnames(data) <- sapply(colnames(data), function(x) ifelse(x %in% names(variable_mapping), variable_mapping[x], x))
+attach(data)
+
+complete_model <- gamlss(response~Age+Cardiac+                                      Genetic+Po_Attention_score+Po_Handling_score+Po_Movement_score+                            Po_Regulation_score+Po_Reflexes_score+Po_Stress_score+ Po_Arousal_score+ Po_Hypertonic_score +Po_Hypotonic_score+Po_Asymmetry_score+Po_Excitability_score+                     Po_Lethargy_score,
+                            
+    sigma.formula =~1, nu.formula = ~Age+Cardiac+                                      Genetic+Po_Attention_score+Po_Handling_score+Po_Movement_score+                            Po_Regulation_score+Po_Reflexes_score+Po_Stress_score+ Po_Arousal_score+ Po_Hypertonic_score +Po_Hypotonic_score+Po_Asymmetry_score+Po_Excitability_score+                     Po_Lethargy_score, family = BEZI, data)
+summary(complete_model)
+```
+
+Exponentiating estimtaes:
+```{r}
+# Assuming complete_model is your fitted model
+
+# Extract mu and nu coefficients and confidence intervals
+mu_info <- broom::tidy(exp(coef(complete_model, "mu")))
+nu_info <- broom::tidy(exp(coef(complete_model, "nu")))
+
+# Add a column to specify the component
+mu_info$Component <- "mu"
+nu_info$Component <- "nu"
+
+# Combine mu and nu information
+result_table <- rbind(mu_info, nu_info)
+
+# Print the combined table
+print(result_table)
+
+
+```
+
