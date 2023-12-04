@@ -1,0 +1,428 @@
+---
+title: "Untitled"
+author: "Sima"
+date: "2023-12-01"
+output: html_document
+---
+
+Objective 1:
+Are lower pre- or post-op attention scores associated with lower % oral feeds at discharge?
+```{r,inclue=FALSE}
+library(knitr)
+library(kableExtra)
+library(mice)
+library(gamlss)
+library(KMsurv)
+library(survminer)
+library(survival)
+library(tidyverse)
+```
+
+Changing 1s to less than 1:
+
+```{r,include=FALSE}
+nnns_imputed<- readRDS("C:/Users/u0753531/OneDrive - University of Utah/Desktop/StatPractice/survival_project/scripts/nnns_imputed.rds")
+data=complete(nnns_imputed, 1)
+names(data)
+attach(data)
+response=Percent_of_feeds_taken_by_mouth_at_discharge
+
+
+# Check if there are any non-zero values in the response
+non_zero_indices <- which(response != 0)
+
+if (length(non_zero_indices) > 0) {
+  # Apply the transformation to non-zero values
+  response[non_zero_indices] <- ((response[non_zero_indices]*(length(non_zero_indices)-1)) + 0.5) / length(non_zero_indices)
+}
+response
+
+```
+
+```{r,include=FALSE}
+
+# Define a mapping of old variable names to new, shorter names
+variable_mapping <- c(
+  "Female" = "Female",
+  "Age_at_Surgery_days" = "Age",
+  "Cardiac_Anatomy_collapsed" = "Cardiac",
+  "Genetic_Syndrome_or_Chromosomal_Abnormality" = "Genetic",
+  "Pre_Op_NNNS_attention_score" = "Attention_score",
+  "Pre_Op_NNNS_handling_score" = "Handling_score",
+  "Pre_Op_NNNS_Quality_of_Movement_Score" = "Movement_score",
+  "Pre_Op_NNNS_Regulation_Score" = "Regulation_score",
+  "Pre_Op_NNNS_Non_Optimal_Reflexes_Score" = "Reflexes_score",
+  "Pre_Op_NNNS_Stress_Score" = "Stress_score",
+  "Pre_Op_NNNS_Arousal_Score" = "Arousal_score",
+  "Pre_Op_NNNS_Hypertonic_Score" = "Hypertonic_score",
+  "Pre_Op_NNNS_Hypotonic_Score" = "Hypotonic_score",
+  "Pre_Op_NNNS_Asymmetry_Score" = "Asymmetry_score",
+  "Pre_Op_NNNS_Excitability_Score" = "Excitability_score",
+  "Pre_Op_NNNS_Lethargy_Score" = "Lethargy_score",
+  "Cardiac_Anatomy_collapsed"="Cardiac"
+)
+
+# Rename the columns of the data frame using the mapping
+colnames(data) <- sapply(colnames(data), function(x) ifelse(x %in% names(variable_mapping), variable_mapping[x], x))
+attach(data)
+Cardiac=as.factor(Cardiac)
+
+```
+
+
+Pre:
+```{r}
+complete_model <- gamlss(response ~   Age+Cardiac+Female+                                      Genetic+Attention_score+Handling_score+Movement_score+                            Regulation_score+Reflexes_score+Stress_score+ Arousal_score+ Hypertonic_score +Hypotonic_score+Asymmetry_score+Excitability_score+                     Lethargy_score,
+                            
+    sigma.formula =~1, nu.formula = ~Age+  Cardiac+ Female+                                   Genetic+Attention_score+Handling_score+Movement_score+                            Regulation_score+Reflexes_score+Stress_score+ Arousal_score+ Hypertonic_score +Hypotonic_score+Asymmetry_score+Excitability_score+                     Lethargy_score, family = BEZI, data
+  )
+summary(complete_model)
+```
+Reflex score and Arousal score are significant.
+
+find the estimated values and confidence interval after exponentiation:
+
+
+```{r,include=FALSE}
+# Extract mu and nu coefficients and confidence intervals
+mu_info <- broom::tidy(exp(coef(complete_model, "mu")))
+nu_info <- broom::tidy(exp(coef(complete_model, "nu")))
+
+# Add a column to specify the component
+mu_info$Component <- "mu"
+nu_info$Component <- "nu"
+
+# Combine mu and nu information
+result_table <- rbind(mu_info, nu_info)
+a=exp(confint(complete_model))[-19,]
+dim(a)
+
+result_table2=data.frame(result_table,a)
+library(dplyr)
+
+mu_table <- result_table2 %>%
+  filter(Component == "mu") %>%
+  as.data.frame()
+
+# Extract nu values
+nu_table <- result_table2 %>%
+  filter(Component == "nu") %>%
+  as.data.frame()
+
+mu_table1=mu_table[,-3]
+mu_table2=round(mu_table1[,c(2,3,4)],3)
+p_values_mu <- round(c(
+  0.3639,  # (Intercept)
+  0.3147,  # Age
+  0.3039,  # CardiacSingle ventricle w/ arch obstruction
+  0.9960,  # CardiacTwo ventricle w/ arch obstruction
+  0.1784,  # Female
+  0.0558,  # Genetic
+  0.5325,  # Attention_score
+  0.9020,  # Handling_score
+  0.4386,  # Movement_score
+  0.9108,  # Regulation_score
+  0.0376,  # Reflexes_score
+  0.1894,  # Stress_score
+  0.0468,  # Arousal_score
+  0.7329,  # Hypertonic_score
+  0.7041,  # Hypotonic_score
+  0.6460,  # Asymmetry_score
+  0.3118,  # Excitability_score
+  0.7243)   # Lethargy_score
+,3)
+
+mu_table2=cbind(mu_table2,p_values_mu)
+
+
+
+
+
+colnames(mu_table2)=c( "Esrimated Values", "lower CI","Upper CI","p-value")
+rownames(mu_table2)=c("intercept","Age","Single ventricle w/ arch obstruction","CardiacTwo ventricle w/ arch obstruction","Female",                                     "Genetic","Attention_score","Handling_score","Movement_score",                           "Regulation_score","Reflexes_score","Stress_score", "Arousal_score"," Hypertonic_score" ,"Hypotonic_score","Asymmetry_score","Excitability_score",                    "Lethargy_score")
+
+```
+table for Odds of >0% oral feeds:
+```{r}
+
+library(kableExtra)
+
+
+html_table <- mu_table2 %>%
+  kable("html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE, position = "center") %>%
+  add_header_above(c("Post scores" = 1, "Odds of oral feed when oral feed is> 0%" = 4))
+
+html_table %>%
+  row_spec(c(11,13), extra_css = "background-color: #f2f2f2; font-weight: bold;") %>%
+  column_spec(1, extra_css = "font-weight: bold; color: Black;")
+
+
+```
+
+The zero inflated beta regression analysis suggests that lower pre-op Attention scores of Arousal and Reflexes scores when oral feed at discharge is >0  are associated with lower odds of oral feeds at discharge. The odds ratio for Arousal score  is 0.428, indicating that for each one-unit decrease in this, the odds of oral feeds decrease by approximately 42.8%. Also,The odds ratio for Reflexes score  is 0.815, indicating that for each one-unit decrease in this, the odds of oral feeds decrease by approximately 81.5%.
+
+table for Odds of 0% oral feeds:
+```{r}
+nu_table <- result_table2 %>%
+  filter(Component == "nu") %>%
+  as.data.frame()
+
+nu_table1=nu_table[,-3]
+nu_table2=round(nu_table1[,c(2,3,4)],3)
+p_values_nu <-round( c(
+  0.5245,  # (Intercept)
+  0.4672,  # Age
+  0.0132,  # CardiacSingle ventricle w/ arch obstruction
+  0.1581,  # CardiacTwo ventricle w/ arch obstruction
+  0.2390,  # Female
+  0.2124,  # Genetic
+  0.8350,  # Attention_score
+  0.5861,  # Handling_score
+  0.4660,  # Movement_score
+  0.8646,  # Regulation_score
+  0.8430,  # Reflexes_score
+  0.1715,  # Stress_score
+  0.7233,  # Arousal_score
+  0.3737,  # Hypertonic_score
+  0.6049,  # Hypotonic_score
+  0.8519,  # Asymmetry_score
+  0.5026,  # Excitability_score
+  0.2658),3   # Lethargy_score
+)
+nu_table2=cbind(nu_table2,p_values_nu)
+
+
+
+
+
+
+colnames(nu_table2)=c( "Esrimated Values", "lower CI","Upper CI","P-values")
+rownames(nu_table2)=c("intercept","Age","Single ventricle w/ arch obstruction","CardiacTwo ventricle w/ arch obstruction","Female",                                     "Genetic","Attention_score","Handling_score","Movement_score",                           "Regulation_score","Reflexes_score","Stress_score", "Arousal_score"," Hypertonic_score" ,"Hypotonic_score","Asymmetry_score","Excitability_score",                    "Lethargy_score")
+nu_table2
+
+```
+
+
+```{r}
+nu_table2 %>%
+  kable("html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE, position = "center") %>%
+  add_header_above(c("Pre scores" = 1, "Odds of oral feed when oral feed is 0%" = 4))
+
+
+```
+when oral feed at discharge is 0 no pre score is significant and impact oral feed ability.
+Post:
+```{r,include=FALSE}
+# Define a mapping of old variable names to new shorter names
+variable_mapping <- c(
+  "Post_Op_NNNS_attention_score" = "Po_Attention_score",
+  "Post_Op_NNNS_handling_score" = "Po_Handling_score",
+  "Post_Op_NNNS_Quality_of_Movement_Score" = "Po_Movement_score",
+  "Post_Op_NNNS_Regulation_Score" = "Po_Regulation_score",
+  "Post_Op_NNNS_Non_Optimal_Reflexes_Score" = "Po_Reflexes_score",
+  "Post_Op_NNNS_Stress_Score" = "Po_Stress_score",
+  "Post_Op_NNNS_Arousal_Score" = "Po_Arousal_score",
+  "Post_Op_NNNS_Hypertonic_Score" = "Po_Hypertonic_score",
+  "Post_Op_NNNS_Hypotonic_Score" = "Po_Hypotonic_score",
+  "Post_Op_NNNS_Asymmetry_Score" = "Po_Asymmetry_score",
+  "Post_Op_NNNS_Excitability_Score" = "Po_Excitability_score",
+  "Post_Op_NNNS_Lethargy_Score" = "Po_Lethargy_score"
+)
+colnames(data) <- sapply(colnames(data), function(x) ifelse(x %in% names(variable_mapping), variable_mapping[x], x))
+attach(data)
+```
+
+
+```{r}
+complete_model <- gamlss(response~Age+Cardiac+ Female+                                     Genetic+Po_Attention_score+Po_Handling_score+Po_Movement_score+                            Po_Regulation_score+Po_Reflexes_score+Po_Stress_score+ Po_Arousal_score+ Po_Hypertonic_score +Po_Hypotonic_score+Po_Asymmetry_score+Po_Excitability_score+                     Po_Lethargy_score,
+                            
+    sigma.formula =~1, nu.formula = ~Age+Cardiac+ Female+                                     Genetic+Po_Attention_score+Po_Handling_score+Po_Movement_score+                            Po_Regulation_score+Po_Reflexes_score+Po_Stress_score+ Po_Arousal_score+ Po_Hypertonic_score +Po_Hypotonic_score+Po_Asymmetry_score+Po_Excitability_score+                     Po_Lethargy_score, family = BEZI, data)
+summary(complete_model)
+```
+
+Exponentiating estimtaes:
+```{r}
+
+
+# Extract mu and nu coefficients and confidence intervals
+mu_info <- broom::tidy(exp(coef(complete_model, "mu")))
+nu_info <- broom::tidy(exp(coef(complete_model, "nu")))
+
+# Add a column to specify the component
+mu_info$Component <- "mu"
+nu_info$Component <- "nu"
+
+# Combine mu and nu information
+result_table <- rbind(mu_info, nu_info)
+a=exp(confint(complete_model))[-19,]
+dim(a)
+
+result_table2=data.frame(result_table,a)
+library(dplyr)
+
+mu_table <- result_table2 %>%
+  filter(Component == "mu") %>%
+  as.data.frame()
+
+# Extract nu values
+nu_table <- result_table2 %>%
+  filter(Component == "nu") %>%
+  as.data.frame()
+
+mu_table1=mu_table[,-3]
+mu_table2=round(mu_table1[,c(2,3,4)],3)
+p_values_mu2 <- round(c(
+  0.3663,  # (Intercept)
+  0.3115,  # Age
+  0.4580,  # CardiacSingle ventricle w/ arch obstruction
+  0.6655,  # CardiacTwo ventricle w/ arch obstruction
+  0.2355,  # Female
+  0.0428,  # Genetic
+  0.3034,  # Po_Attention_score
+  0.5758,  # Po_Handling_score
+  0.1687,  # Po_Movement_score
+  0.1816,  # Po_Regulation_score
+  0.2958,  # Po_Reflexes_score
+  0.7853,  # Po_Stress_score
+  0.4437,  # Po_Arousal_score
+  0.9328,  # Po_Hypertonic_score
+  0.4013,  # Po_Hypotonic_score
+  0.4077,  # Po_Asymmetry_score
+  0.7770,  # Po_Excitability_score
+  0.6673),3   # Po_Lethargy_score
+)
+mu_table2=cbind(mu_table2,p_values_mu2)
+
+
+
+
+
+colnames(mu_table2)=c( "Esrimated Values", "lower CI","Upper CI","p-values")
+rownames(mu_table2)=c("intercept","Age","Single ventricle w/ arch obstruction","CardiacTwo ventricle w/ arch obstruction","Female",                                     "Genetic","Attention_score","Handling_score","Movement_score",                           "Regulation_score","Reflexes_score","Stress_score", "Arousal_score"," Hypertonic_score" ,"Hypotonic_score","Asymmetry_score","Excitability_score",                    "Lethargy_score")
+
+```
+table for Odds of >0% oral feeds for post scores:
+```{r}
+
+
+html_table <- mu_table2 %>%
+  kable("html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE, position = "center") %>%
+  add_header_above(c("Post scores" = 1, "Odds of oral feed when oral feed is> 0%" = 4))
+
+
+html_table
+
+```
+
+when oral feed at discharge is 0 none of post scores are associated with lower oral feed at discharge. 
+table for Odds of 0% oral feeds for post scores:
+```{r}
+nu_table <- result_table2 %>%
+  filter(Component == "nu") %>%
+  as.data.frame()
+
+nu_table1=nu_table[,-3]
+nu_table2=round(nu_table1[,c(2,3,4)],3)
+
+p_values_nu2 <-round( c(
+  0.7115,  # (Intercept)
+  0.8565,  # Age
+  0.0114,  # CardiacSingle ventricle w/ arch obstruction
+  0.6187,  # CardiacTwo ventricle w/ arch obstruction
+  0.2887,  # Female
+  0.1642,  # Genetic
+  0.8303,  # Po_Attention_score
+  0.0420,  # Po_Handling_score
+  0.9838,  # Po_Movement_score
+  0.8435,  # Po_Regulation_score
+  0.0068,  # Po_Reflexes_score
+  0.6254,  # Po_Stress_score
+  0.8841,  # Po_Arousal_score
+  0.0354,  # Po_Hypertonic_score
+  0.7335,  # Po_Hypotonic_score
+  0.5689,  # Po_Asymmetry_score
+  0.7631,  # Po_Excitability_score
+  0.6732),3   # Po_Lethargy_score
+)
+nu_table2=cbind(nu_table2,p_values_nu2)
+
+colnames(nu_table2)=c( "Esrimated Values", "lower CI","Upper CI","P_values")
+rownames(nu_table2)=c("intercept","Age","Single ventricle w/ arch obstruction","CardiacTwo ventricle w/ arch obstruction","Female",                                     "Genetic","Attention_score","Handling_score","Movement_score",                           "Regulation_score","Reflexes_score","Stress_score", "Arousal_score"," Hypertonic_score" ,"Hypotonic_score","Asymmetry_score","Excitability_score",                    "Lethargy_score")
+
+
+```
+
+```{r}
+html_table <- nu_table2 %>%
+  kable("html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE, position = "center") %>%
+  add_header_above(c("Post scores" = 1, "Odds of oral feed when oral feed is 0%" = 4))
+
+html_table %>%
+  row_spec(c(8,11,14), extra_css = "background-color: #f2f2f2; font-weight: bold;") %>%
+  column_spec(1, extra_css = "font-weight: bold; color: Black;")
+
+```
+
+when oral feed at discharge is 0 post reflex score, hypertonic post score and handling post Hypertonic score are associated with the lower oral feed at discharge.
+
+
+so overall we can say post Reflex scores, post Hypertonic scores, post handling scores and pre Reflex scores and also pre Arousal scores are associated with lower oral feed at discharge.
+
+Summary of Results:
+post reflex score, hypertonic post score and handling post Hypertonic score are associated with the lower oral feed at discharge. Also, pre Reflex scores and also pre Arousal scores are associated with lower oral feed at discharge.
+
+## Survival Analysis 
+
+```{r}
+#| echo: false
+# Create a new variable indicating whether the event occurred or if it was censored
+data$Event <- ifelse(!is.na(data$Date_Reaching_Full_PO), 1, 0)
+
+# Create a survival object
+Surv(data$Length_of_Stay_days, data$Event)
+```
+
+```{r}
+#| echo: false
+#plot.survfit creates Kaplan-Meier curves
+plot(survfit(Surv(Length_of_Stay_days, Event) ~ 1, data = data), 
+     main = "Achieving Full Oral Feeds Following Surgery",
+     xlab = "Days", 
+     ylab = "Kaplan-Meier Estimate of Achieving Probability")
+
+```
+
+```{r}
+#| echo: false
+#print.survfit provides median survival 
+print(survfit(Surv(Length_of_Stay_days, Event) ~ 1, data = data), 
+      main = "Achieving Full Oral Feeds Following Surgery",
+      xlab = "Days", 
+      ylab = "Kaplan-Meier Estimate of Achieving Probability")
+```
+
+```{r}
+#| echo: false
+
+# Nicer Kaplan Meier
+ggsurvplot(
+  fit = survfit(Surv(data$Length_of_Stay_days, data$Event) ~ 1), 
+  data = data,
+  xlab = "Days", 
+  ylab = "Overall Achieve probability")
+```
+
+
+```{r}
+#| echo: false
+ggsurvplot(fit = survfit(Surv(data$Length_of_Stay_days, data$Event) ~ 1),
+           data = data,
+           censor = FALSE,
+           xlab = "Days",
+           ylab = "Overal Achieve Probability")
+```
+
