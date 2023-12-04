@@ -1,0 +1,93 @@
+---
+title: "NNNS Project"
+author: "Sima, Brody, Kline, and Sophie"
+format: html
+editor: visual
+---
+
+# Load packages
+```{r,include=FALSE}
+#| echo: false
+library(knitr)
+library(kableExtra)
+library(mice)
+library(gamlss)
+library(KMsurv)
+library(survminer)
+library(survival)
+library(tidyverse)
+```
+
+# Load the data
+```{r, message=FALSE}
+#| echo: false
+nnns_imputed<- readRDS("C:/Users/u0753531/OneDrive - University of Utah/Desktop/StatPractice/survival_project/scripts/nnns_imputed.rds")
+data=complete(nnns_imputed, 1)
+
+colnames(data)
+```
+
+
+# Cox Regression
+```{r}
+# Check the structure of your data
+str(data)
+```
+
+```{r}
+# Create a time variable (days to event or censoring) and an event indicator variable (1 for event, 0 for censored)
+
+data <- mutate(data, 
+               Time_to_event = ifelse(!is.na(Date_Reaching_Full_PO), 
+                                      as.numeric(difftime(as.Date(Date_Reaching_Full_PO), 
+                                                          as.Date(Date_PO_feeds_started), 
+                                                          units = "days")),
+                                      Length_of_Stay_days),
+               Event_indicator = ifelse(!is.na(Date_Reaching_Full_PO), 1, 0))
+
+```
+
+## Fit Cox Proportional Hazards models
+```{r}
+
+# Model 1: Univariate model with pre-surgery attention score
+model1 <- coxph(Surv(Time_to_event, Event_indicator) ~ Po_Attention_Score, data = data)
+
+# Model 2: Univariate model with post-surgery attention score
+model2 <- coxph(Surv(Time_to_event, Event_indicator) ~ Attention_score, data = data)
+
+# Model 3: Multivariate model with selected covariates
+model3 <- coxph(Surv(Time_to_event, Event_indicator) ~ 
+                  Po_Attention_Score + 
+                  Attention_score + 
+                  Sex + 
+                  Genetic + 
+                  Age + 
+                  Premature + 
+                  Cardiac + 
+                  Length_of_intubation_days + 
+                  Extubation_failure + 
+                  GI_Complication,
+                data = data)
+```
+
+
+## Compare the models using ANOVA
+```{r}
+# Compare models using ANOVA
+anova_result <- anova(model1, model2, model3)
+
+# Display ANOVA results
+print(anova_result)
+```
+
+## Table Hazard Ratios and CI 
+```{r}
+# Display hazard ratios and confidence intervals in a table
+hazard_ratios <- exp(cbind(coef(model3), confint(model3)))
+colnames(hazard_ratios) <- c("Hazard Ratio", "Lower CI", "Upper CI")
+
+# Display the table
+kable(hazard_ratios, format = "markdown", digits = 3) %>%
+  kable_styling()
+```
