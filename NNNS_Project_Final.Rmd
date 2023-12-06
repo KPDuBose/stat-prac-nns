@@ -15,6 +15,7 @@ library(mice)
 library(gamlss)
 library(survival)
 library(tidyverse)
+library(survminer)
 ```
 
 # Objective 1:
@@ -516,9 +517,24 @@ data <- mutate(data,
 
 ### Fit Cox Proportional Hazards models
 
+#### Both Pre- and Postoperative Attention Scores
+
 ```{r}
-# Fit Cox proportional hazards model
-cox_model <- coxph(Surv(Time_to_event, Event_indicator) ~ 
+# Univariable
+
+cox_model1 <- coxph(Surv(Time_to_event, Event_indicator) ~ 
+                            Attention_score + 
+                            Po_Attention_score, 
+                          data = data)
+
+summary_cox_model1 <- tidy(cox_model1, conf.int = TRUE, exponentiate = TRUE)
+
+summary(cox_model1)
+```
+
+```{r}
+# Multivariable
+cox_model2 <- coxph(Surv(Time_to_event, Event_indicator) ~ 
                      Age + 
                      Cardiac + 
                      Female + 
@@ -531,11 +547,12 @@ cox_model <- coxph(Surv(Time_to_event, Event_indicator) ~
                      Po_Attention_score,
                    data = data)
 
-summary_cox <- tidy(cox_model, conf.int = TRUE, exponentiate = TRUE)
+summary_cox_model2 <- tidy(cox_model2, conf.int = TRUE, exponentiate = TRUE)
 
-summary(cox_model)
+summary(cox_model2)
 ```
 Note: do not think this model should be used since it includes both pre and post attention scores
+
 #### Preoperative Attention Scores
 
 ```{r}
@@ -569,6 +586,7 @@ summary_pre_op_multi_model <- tidy(pre_op_multi_model, conf.int = TRUE, exponent
 
 summary(pre_op_multi_model)
 ```
+
 Multivariable interpretation:  
 
 Attention score appeared to be a marginally good predictor of time to full oral feed; however, this association was not signficant (HR = 1.259,95% CI: ; p-value = 0.086). 
@@ -610,9 +628,80 @@ summary_post_op_multi_model <- tidy(post_op_multi_model, conf.int = TRUE, expone
 
 summary(post_op_multi_model)
 ```
+
 Multivariable Analysis:
 
 In the multivariable analysis, postoperative NNNS attention scores remained non-significant (HR = 0.926; p = 0.574). Several variables showed significant associations:
 Premature birth (HR = 4.506, p < 0.001); Cardiac conditions (Single ventricle: HR = 0.412, p = 0.009; Two ventricle: HR = 0.565, p = 0.047); Length of intubation days (HR = 0.872, p = 0.021); Extubation failure (HR = 0.302, p = 0.014)
 
 The overall model exhibited good predictive accuracy (Concordance = 0.707).Likelihood ratio test (p = 3e-05), Wald test (p = 5e-04), and Score (logrank) test (p = 2e-04) indicated that the multivariable model is statistically significant.
+
+#### Graphs
+
+##### Combined
+
+```{r}
+# Uni-variable
+ggsurvplot(survfit(cox_model1),
+           data = data,
+           color = "#2E9FDF",
+           ggtheme = theme_minimal())
+```
+
+
+```{r}
+# Multi-variable
+ggsurvplot(survfit(cox_model2),
+           data = data,
+           color = "#2E9FDF",
+           ggtheme = theme_minimal())
+```
+
+##### Preoperative Attention Score
+
+```{r}
+# Uni-variable
+ggsurvplot(survfit(pre_op_uni_model),
+           data = data,
+           color = "#2E9FDF",
+           title = "Pre-Operative Attention Score (Univariable) - Survival Curve ",
+           xlab = "Time (in days)",
+           ylab = "Failing to Achieve Full Oral Feed Probability",
+           risk.table.title = "Number at Risk",
+           risk.table.col = "strata",
+           risk.table = TRUE,
+           ggtheme = theme_minimal())
+```
+
+
+```{r}
+# Multi-variable
+ggsurvplot(survfit(pre_op_multi_model),
+           data = data,
+           color = "#2E9FDF",
+           ggtheme = theme_minimal())
+```
+
+##### Post-operative Attention Score
+```{r}
+# Uni-variable
+ggsurvplot(survfit(post_op_uni_model),
+           data = data,
+           color = "#2E9FDF",
+           title = "Post-Operative Attention Score (Univariable) - Survival Curve ",
+           xlab = "Time (in days)",
+           ylab = "Failing to Achieve Full Oral Feed Probability",
+           risk.table.title = "Number at Risk",
+           risk.table.col = "strata",
+           risk.table = TRUE,
+           ggtheme = theme_minimal())
+```
+
+
+```{r}
+# Multi-variable
+ggsurvplot(survfit(post_op_multi_model), 
+           data = data,
+           color = "#2E9FDF",
+           ggtheme = theme_minimal())
+```
