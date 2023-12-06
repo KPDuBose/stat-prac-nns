@@ -1,0 +1,618 @@
+---
+title: 'NNNS Project: Beta and Cox Regression'
+author: "Sima and Brody"
+date: "2023-12-06"
+output: html_document
+---
+
+
+# Load packages
+
+```{r,inclue=FALSE}
+library(knitr)
+library(kableExtra)
+library(mice)
+library(gamlss)
+library(survival)
+library(tidyverse)
+```
+
+# Objective 1:
+Are lower pre- or post-op attention scores associated with lower % oral feeds at discharge?
+
+we used all covariates except for other NNNS scores.
+
+Changing 1s to less than 1:
+
+```{r,include=FALSE}
+nnns_imputed<- readRDS("C:/Users/u0753531/OneDrive - University of Utah/Desktop/StatPractice/survival_project/scripts/nnns_imputed.rds")
+data=complete(nnns_imputed, 1)
+names(data)
+attach(data)
+response=Percent_of_feeds_taken_by_mouth_at_discharge
+
+# Check if there are any non-zero values in the response
+non_zero_indices <- which(response != 0)
+
+if (length(non_zero_indices) > 0) {
+  # Apply the transformation to non-zero values
+  response[non_zero_indices] <- ((response[non_zero_indices]*(length(non_zero_indices)-1)) + 0.5) / length(non_zero_indices)
+}
+
+
+```
+
+```{r,include=FALSE}
+
+# Define a mapping of old variable names to new, shorter names
+variable_mapping <- c(
+  "Female" = "Female",
+  "Age_at_Surgery_days" = "Age",
+  "Cardiac_Anatomy_collapsed" = "Cardiac",
+  "Genetic_Syndrome_or_Chromosomal_Abnormality" = "Genetic",
+  "Pre_Op_NNNS_attention_score" = "Attention_score",
+  "Pre_Op_NNNS_handling_score" = "Handling_score",
+  "Pre_Op_NNNS_Quality_of_Movement_Score" = "Movement_score",
+  "Pre_Op_NNNS_Regulation_Score" = "Regulation_score",
+  "Pre_Op_NNNS_Non_Optimal_Reflexes_Score" = "Reflexes_score",
+  "Pre_Op_NNNS_Stress_Score" = "Stress_score",
+  "Pre_Op_NNNS_Arousal_Score" = "Arousal_score",
+  "Pre_Op_NNNS_Hypertonic_Score" = "Hypertonic_score",
+  "Pre_Op_NNNS_Hypotonic_Score" = "Hypotonic_score",
+  "Pre_Op_NNNS_Asymmetry_Score" = "Asymmetry_score",
+  "Pre_Op_NNNS_Excitability_Score" = "Excitability_score",
+  "Pre_Op_NNNS_Lethargy_Score" = "Lethargy_score",
+  "Cardiac_Anatomy_collapsed"="Cardiac"
+)
+
+# Rename the columns of the data frame using the mapping
+colnames(data) <- sapply(colnames(data), function(x) ifelse(x %in% names(variable_mapping), variable_mapping[x], x))
+attach(data)
+Cardiac=as.factor(Cardiac)
+
+
+```
+
+```{r,include=FALSE}
+# Define a mapping of old variable names to new shorter names
+variable_mapping <- c(
+  "Post_Op_NNNS_attention_score" = "Po_Attention_score",
+  "Post_Op_NNNS_handling_score" = "Po_Handling_score",
+  "Post_Op_NNNS_Quality_of_Movement_Score" = "Po_Movement_score",
+  "Post_Op_NNNS_Regulation_Score" = "Po_Regulation_score",
+  "Post_Op_NNNS_Non_Optimal_Reflexes_Score" = "Po_Reflexes_score",
+  "Post_Op_NNNS_Stress_Score" = "Po_Stress_score",
+  "Post_Op_NNNS_Arousal_Score" = "Po_Arousal_score",
+  "Post_Op_NNNS_Hypertonic_Score" = "Po_Hypertonic_score",
+  "Post_Op_NNNS_Hypotonic_Score" = "Po_Hypotonic_score",
+  "Post_Op_NNNS_Asymmetry_Score" = "Po_Asymmetry_score",
+  "Post_Op_NNNS_Excitability_Score" = "Po_Excitability_score",
+  "Post_Op_NNNS_Lethargy_Score" = "Po_Lethargy_score"
+)
+colnames(data) <- sapply(colnames(data), function(x) ifelse(x %in% names(variable_mapping), variable_mapping[x], x))
+attach(data)
+```
+
+
+```{r}
+# Assuming 'response' is your data for the histogram
+hist(Percent_of_feeds_taken_by_mouth_at_discharge, main = 'Histogram of Percentage of Oral Feeds Taken by Mouth at Discharge', xlab = 'Percentage of Oral Feeds', ylab = 'Frequency', col = 'lightblue', border = 'black', breaks = 10)
+
+
+```
+After changing non-zero values to be less than 1:
+```{r}
+hist(response, main = 'Histogram of Percentage of Oral Feeds Taken by Mouth at Discharge', xlab = 'Percentage of Oral Feeds', ylab = 'Frequency', col = 'lightblue', border = 'black', breaks = 10)
+mtext(text = 'Note: Values changed by y(n-1)+0.5/n to avoid having 1', side = 1, line = 4, adj = 0.5, cex = 0.8)
+
+```
+
+```{r}
+
+plot(data$Attention_score, data$response, 
+     main = 'Scatter Plot of pre_attention Score vs Response',
+     xlab = 'Total Score', ylab = 'Response')
+
+
+
+```
+
+```{r}
+plot(data$Po_Attention_score, data$response, 
+     main = 'Scatter Plot of post_attention Score vs Response',
+     xlab = 'Post Attention Score', ylab = 'Response')
+```
+
+
+Analysis of model for pre and post:
+
+First considering pre and post attention scores in one model:
+
+```{r}
+complete_model <- gamlss(response ~   Age+Cardiac+Female+ GI_Complication+Premature+Length_of_intubation_days+Length_of_Stay_days+                                    Genetic+Extubation_failure+Attention_score+Po_Attention_score,
+                            
+    sigma.formula =~1, nu.formula = ~Age+Cardiac+Female+ GI_Complication+Premature+Length_of_intubation_days+Length_of_Stay_days+                                    Genetic+Extubation_failure+Attention_score+Po_Attention_score, family = BEZI, data
+  )
+summary(complete_model)
+```
+```{r,include=FALSE}
+# Extract mu and nu coefficients and confidence intervals
+mu_info <- broom::tidy(exp(coef(complete_model, "mu")))
+nu_info <- broom::tidy(exp(coef(complete_model, "nu")))
+
+# Add a column to specify the component
+mu_info$Component <- "mu"
+nu_info$Component <- "nu"
+
+# Combine mu and nu information
+result_table <- rbind(mu_info, nu_info)
+a=(exp(confint(complete_model)))[-14,]
+
+
+result_table2=data.frame(result_table,a)
+library(dplyr)
+
+mu_table <- result_table2 %>%
+  filter(Component == "mu") %>%
+  as.data.frame()
+
+# Extract nu values
+nu_table <- result_table2 %>%
+  filter(Component == "nu") %>%
+  as.data.frame()
+
+mu_table1=mu_table[,-3]
+mu_table2=round(mu_table1[,c(2,3,4)],3)
+p_values_mu <- round(c(
+0.1719,0.1330,0.7841,0.2907,0.5487,0.8351,0.2805,0.0284 
+ ,0.1551,0.0589,0.1649,0.2739,0.6104)
+,3)
+names(data)
+mu_table2=cbind(mu_table2,p_values_mu)
+
+colnames(mu_table2)=c( "Estimated Values", "lower CI","Upper CI","p-value")
+rownames(mu_table2)=c("intercept","Age","Single ventricle w/ arch obstruction","CardiacTwo ventricle w/ arch obstruction","Female",
+"GI_Complication",
+"Premature",
+"Length_of_intubation_days",
+"Length_of_Stay_days",
+"Genetic","Extubation_failure",
+"Pre_Attention score","Post_Attention score")
+
+```
+
+table for Odds of >0% oral feeds:
+```{r}
+html_table <- mu_table2 %>%
+  kable("html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE, position = "center") %>%
+  add_header_above(c(" " = 1, "Odds of oral feed when oral feed is> 0%" = 4))
+
+html_table %>%
+  row_spec(c(8), extra_css = "background-color: #f2f2f2; font-weight: bold;") %>%
+  column_spec(1, extra_css = "font-weight: bold; color: Black;")
+
+
+```
+
+
+
+table for Odds of 0% oral feeds for pre and post scores:
+```{r}
+nu_table <- result_table2 %>%
+  filter(Component == "nu") %>%
+  as.data.frame()
+
+nu_table1=nu_table[,-3]
+nu_table2=round(nu_table1[,c(2,3,4)],3)
+
+p_values_nu3=round(c(0.198017,0.826825,0.000453 
+ ,0.022337 
+
+ ,0.203229,0.094465,0.963463,0.001123 
+
+ ,0.110566,0.430823,0.031817 
+
+ ,0.102482,0.446472),3)
+nu_table2=cbind(nu_table2,p_values_nu3)
+
+colnames(nu_table2)=c( "Esrimated Values", "lower CI","Upper CI","P_values")
+rownames(nu_table2)=c("intercept","Age","Single ventricle w/ arch obstruction","CardiacTwo ventricle w/ arch obstruction","Female",
+"GI_Complication",
+"Premature",
+"Length_of_intubation_days",
+"Length_of_Stay_days",
+"Genetic","Extubation_failure","Pre_Attention_score",
+"Post_Attention_score")
+
+
+```
+
+```{r}
+html_table <- nu_table2 %>%
+  kable("html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE, position = "center") %>%
+  add_header_above(c(" " = 1, "Odds of oral feed when oral feed is 0%" = 4))
+
+html_table %>%
+  row_spec(c(3,4,8,11), extra_css = "background-color: #f2f2f2; font-weight: bold;") %>%
+  column_spec(1, extra_css = "font-weight: bold; color: Black;")
+
+```
+
+
+Having separate model for pre and post attention scores:
+
+Pre:
+```{r}
+complete_model <- gamlss(response ~   Age+Cardiac+Female+ GI_Complication+Premature+Length_of_intubation_days+Length_of_Stay_days+                                    Genetic+Extubation_failure+Attention_score,
+                            
+    sigma.formula =~1, nu.formula = ~Age+Cardiac+Female+ GI_Complication+Premature+Length_of_intubation_days+Length_of_Stay_days+                                    Genetic+Extubation_failure+Attention_score, family = BEZI, data
+  )
+summary(complete_model)
+
+```
+
+
+find the estimated values and confidence interval after exponentiation:
+
+
+```{r,include=FALSE}
+# Extract mu and nu coefficients and confidence intervals
+mu_info <- broom::tidy(exp(coef(complete_model, "mu")))
+nu_info <- broom::tidy(exp(coef(complete_model, "nu")))
+
+# Add a column to specify the component
+mu_info$Component <- "mu"
+nu_info$Component <- "nu"
+
+# Combine mu and nu information
+result_table <- rbind(mu_info, nu_info)
+a=(exp(confint(complete_model)))[-12,]
+dim(a)
+round(a,2)
+
+result_table2=data.frame(result_table,a)
+library(dplyr)
+
+mu_table <- result_table2 %>%
+  filter(Component == "mu") %>%
+  as.data.frame()
+
+# Extract nu values
+nu_table <- result_table2 %>%
+  filter(Component == "nu") %>%
+  as.data.frame()
+
+mu_table1=mu_table[,-3]
+mu_table2=round(mu_table1[,c(2,3,4)],3)
+p_values_mu <- round(c(
+ 0.1484,0.1448,0.9024,0.2495,0.6057,0.9270,0.2918,0.0229 
+ ,0.1724,0.0517,0.1688,0.1881)
+,3)
+names(data)
+mu_table2=cbind(mu_table2,p_values_mu)
+
+colnames(mu_table2)=c( "Estimated Values", "lower CI","Upper CI","p-value")
+rownames(mu_table2)=c("intercept","Age","Single ventricle w/ arch obstruction","CardiacTwo ventricle w/ arch obstruction","Female",
+"GI_Complication",
+"Premature",
+"Length_of_intubation_days",
+"Length_of_Stay_days",
+"Genetic","Extubation_failure",
+"Pre_Attention_score")
+
+```
+
+table for Odds of >0% oral feeds:
+```{r}
+
+html_table <- mu_table2 %>%
+  kable("html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE, position = "center") %>%
+  add_header_above(c(" " = 1, "Odds of oral feed when oral feed is> 0%" = 4))
+
+html_table %>%
+  row_spec(c(8), extra_css = "background-color: #f2f2f2; font-weight: bold;") %>%
+  column_spec(1, extra_css = "font-weight: bold; color: Black;")
+
+
+```
+
+
+table for Odds of 0% oral feeds:
+```{r}
+nu_table <- result_table2 %>%
+  filter(Component == "nu") %>%
+  as.data.frame()
+
+nu_table1=nu_table[,-3]
+nu_table2=round(nu_table1[,c(2,3,4)],3)
+p_values_nu <-round( c(
+ 0.279734,0.793783,0.000499 
+
+ ,0.023769 
+
+ ,0.177770,0.113693,0.992389,0.001088 
+
+ ,0.080149,0.500097,0.032284 
+ ,0.117946),3   # Lethargy_score
+)
+nu_table2=cbind(nu_table2,p_values_nu)
+
+
+colnames(nu_table2)=c( "Estimated Values", "lower CI","Upper CI","P-values")
+rownames(nu_table2)=c("intercept","Age","Single ventricle w/ arch obstruction","CardiacTwo ventricle w/ arch obstruction","Female",
+"GI_Complication",
+"Premature",
+"Length_of_intubation_days",
+"Length_of_Stay_days",
+"Genetic","Extubation_failure",
+"Pre_Attention_score")
+
+
+```
+
+
+```{r}
+html_table=nu_table2 %>% round(digits = 3) %>%
+  kable("html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE, position = "center") %>%
+  add_header_above(c(" " = 1, "Odds of oral feed when oral feed is 0%" = 4))
+
+html_table %>%
+  row_spec(c(3,4,8,11), extra_css = "background-color: #f2f2f2; font-weight: bold;") %>%
+  column_spec(1, extra_css = "font-weight: bold; color: Black;")
+
+```
+
+
+
+Post:
+```{r}
+complete_model <- gamlss(response~  Age+Cardiac+Female+ GI_Complication+Premature+Length_of_intubation_days+Length_of_Stay_days+                                    Genetic+Extubation_failure+Po_Attention_score,
+                            
+    sigma.formula =~1, nu.formula = ~Age+Cardiac+Female+ GI_Complication+Premature+Length_of_intubation_days+Length_of_Stay_days+                                    Genetic+Extubation_failure+Po_Attention_score, family = BEZI, data)
+summary(complete_model)
+```
+
+Exponentiating estimtaes:
+```{r}
+
+
+# Extract mu and nu coefficients and confidence intervals
+mu_info <- broom::tidy(exp(coef(complete_model, "mu")))
+nu_info <- broom::tidy(exp(coef(complete_model, "nu")))
+
+# Add a column to specify the component
+mu_info$Component <- "mu"
+nu_info$Component <- "nu"
+
+# Combine mu and nu information
+result_table <- rbind(mu_info, nu_info)
+a=exp(confint(complete_model))[-13,]
+dim(a)
+
+result_table2=data.frame(result_table,a)
+library(dplyr)
+
+mu_table <- result_table2 %>%
+  filter(Component == "mu") %>%
+  as.data.frame()
+
+# Extract nu values
+nu_table <- result_table2 %>%
+  filter(Component == "nu") %>%
+  as.data.frame()
+
+mu_table1=mu_table[,-3]
+mu_table2=round(mu_table1[,c(2,3,4)],3)
+p_values_mu2 <- round(c(
+0.1790,0.0800 
+ ,0.5137,0.3750,0.3713,0.8477,0.1435,0.0499 
+
+ ,0.1598,0.0487 
+ ,0.1466,0.3691),3   # Po_Lethargy_score
+)
+mu_table2=cbind(mu_table2,p_values_mu2)
+
+
+
+
+
+colnames(mu_table2)=c( "Estimated Values", "lower CI","Upper CI","p-values")
+rownames(mu_table2)=c("intercept","Age","Single ventricle w/ arch obstruction","CardiacTwo ventricle w/ arch obstruction","Female",
+"GI_Complication",
+"Premature",
+"Length_of_intubation_days",
+"Length_of_Stay_days",
+"Genetic","Extubation_failure",
+"Post_Attention_score")
+
+```
+table for Odds of >0% oral feeds for post scores:
+```{r}
+
+
+html_table <- mu_table2 %>%
+  kable("html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE, position = "center") %>%
+  add_header_above(c(" " = 1, "Odds of oral feed when oral feed is> 0%" = 4))
+
+
+html_table %>%
+  row_spec(c(10), extra_css = "background-color: #f2f2f2; font-weight: bold;") %>%
+  column_spec(1, extra_css = "font-weight: bold; color: Black;")
+
+```
+
+table for Odds of 0% oral feeds for post scores:
+```{r}
+nu_table <- result_table2 %>%
+  filter(Component == "nu") %>%
+  as.data.frame()
+
+nu_table1=nu_table[,-3]
+nu_table2=round(nu_table1[,c(2,3,4)],3)
+
+p_values_nu2 <-round( c(
+ 0.171438,0.562887,0.000665 
+ ,0.039072 
+ ,0.121903,0.080973,0.478396,0.002421 
+ ,0.111596,0.428137,0.024077 
+ ,0.582392),3   # Po_Lethargy_score
+)
+nu_table2=cbind(nu_table2,p_values_nu2)
+
+colnames(nu_table2)=c( "Estimated Values", "lower CI","Upper CI","P_values")
+rownames(nu_table2)=c("intercept","Age","Single ventricle w/ arch obstruction","CardiacTwo ventricle w/ arch obstruction","Female",
+"GI_Complication",
+"Premature",
+"Length_of_intubation_days",
+"Length_of_Stay_days",
+"Genetic","Extubation_failure",
+"Post_Attention_score")
+
+
+```
+
+```{r}
+html_table <- nu_table2 %>%
+  kable("html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE, position = "center") %>%
+  add_header_above(c(" " = 1, "Odds of oral feed when oral feed is 0%" = 4))
+
+html_table %>%
+  row_spec(c(3,4,8,11), extra_css = "background-color: #f2f2f2; font-weight: bold;") %>%
+  column_spec(1, extra_css = "font-weight: bold; color: Black;")
+
+```
+
+
+Summary of Results:
+we used three models. One beta regression model included post and pre attention scores. another two models included post and pre attention scores separately. we concluded from all three models that pre and post attention scores are not associated with the lower % oral feeds at discharge.
+
+# Objective 2:
+
+## Cox Regression
+
+```{r}
+# Check the structure of your data
+str(data)
+```
+
+```{r}
+# Create a time variable (days to event or censoring) and an event indicator variable (1 for event, 0 for censored)
+
+data <- mutate(data, 
+               Time_to_event = ifelse(!is.na(Date_Reaching_Full_PO), 
+                                      as.numeric(difftime(as.Date(Date_Reaching_Full_PO), 
+                                                          as.Date(Date_PO_feeds_started), 
+                                                          units = "days")),
+                                      Length_of_Stay_days),
+               Event_indicator = ifelse(!is.na(Date_Reaching_Full_PO), 1, 0))
+
+```
+
+### Fit Cox Proportional Hazards models
+
+```{r}
+# Fit Cox proportional hazards model
+cox_model <- coxph(Surv(Time_to_event, Event_indicator) ~ 
+                     Age + 
+                     Cardiac + 
+                     Female + 
+                     GI_Complication + 
+                     Premature + 
+                     Length_of_intubation_days + 
+                     Genetic + 
+                     Extubation_failure + 
+                     Attention_score + 
+                     Po_Attention_score,
+                   data = data)
+
+summary_cox <- tidy(cox_model, conf.int = TRUE, exponentiate = TRUE)
+
+summary(cox_model)
+```
+Note: do not think this model should be used since it includes both pre and post attention scores
+#### Preoperative Attention Scores
+
+```{r}
+# Univariate 
+pre_op_uni_model <- coxph(Surv(Time_to_event, Event_indicator) ~ Attention_score, data = data)
+
+summary_pre_op_uni_model <- tidy(pre_op_uni_model, conf.int = TRUE, exponentiate = TRUE)
+
+summary(pre_op_uni_model)
+```
+Univariable interpretation: 
+
+Preoperative NNNS attention scores were not associated with time to achieve oral feed (HR: 1.158, 95% CI (0.8638, 0.9516), p-value = 0.143). 
+
+```{r}
+# Multivariate model with selected co-variates
+
+pre_op_multi_model <- coxph(Surv(Time_to_event, Event_indicator) ~
+                              Attention_score + 
+                              Age +
+                              Cardiac + 
+                              Female + 
+                              GI_Complication + 
+                              Premature + 
+                              Length_of_intubation_days + 
+                              Genetic +
+                              Extubation_failure,
+                            data = data)
+
+summary_pre_op_multi_model <- tidy(pre_op_multi_model, conf.int = TRUE, exponentiate = TRUE)
+
+summary(pre_op_multi_model)
+```
+Multivariable interpretation:  
+
+Attention score appeared to be a marginally good predictor of time to full oral feed; however, this association was not signficant (HR = 1.259,95% CI: ; p-value = 0.086). 
+
+Several other variables showed significant associations: Premature birth (HR = 3.209, p = 0.011); Cardiac conditions (Single ventricle: HR = 0.477, p = 0.019; Two ventricle: HR = 0.520, p = 0.026); Length of intubation days (HR = 0.838, p = 0.007); Extubation failure (hazard ratio = 0.300, p = 0.017)
+
+The overall model demonstrated good predictive accuracy (Concordance = 0.708). Likelihood ratio test (p < 0.001), Wald test (p = 0.0002), and Score (logrank) test (p = 0.0001) indicated that the model is statistically significant.
+
+#### Postoperative Attention Scores
+```{r}
+# Univariable
+post_op_uni_model <- coxph(Surv(Time_to_event, Event_indicator) ~ Po_Attention_score, data = data)
+
+summary_post_op_uni_model <- tidy(post_op_uni_model, conf.int = TRUE, exponentiate = TRUE)
+
+summary(post_op_uni_model)
+```
+
+Univariable Analysis:
+
+In the univariable analysis, postoperative NNNS attention scores did not show a statistically significant association with time to full oral feed (HR: 1.148, 95% CI: 0.8713, 0.9044; p = 0.257).
+
+```{r}
+# Multivariable
+
+post_op_multi_model <- coxph(Surv(Time_to_event, Event_indicator) ~
+                               Po_Attention_score + 
+                               Age +
+                               Cardiac + 
+                               Female + 
+                               GI_Complication + 
+                               Premature + 
+                               Length_of_intubation_days + 
+                               Genetic + 
+                               Extubation_failure,
+                             data = data)
+
+summary_post_op_multi_model <- tidy(post_op_multi_model, conf.int = TRUE, exponentiate = TRUE)
+
+summary(post_op_multi_model)
+```
+Multivariable Analysis:
+
+In the multivariable analysis, postoperative NNNS attention scores remained non-significant (HR = 0.926; p = 0.574). Several variables showed significant associations:
+Premature birth (HR = 4.506, p < 0.001); Cardiac conditions (Single ventricle: HR = 0.412, p = 0.009; Two ventricle: HR = 0.565, p = 0.047); Length of intubation days (HR = 0.872, p = 0.021); Extubation failure (HR = 0.302, p = 0.014)
+
+The overall model exhibited good predictive accuracy (Concordance = 0.707).Likelihood ratio test (p = 3e-05), Wald test (p = 5e-04), and Score (logrank) test (p = 2e-04) indicated that the multivariable model is statistically significant.
